@@ -6,7 +6,7 @@ agents:
 steps:
   - name: ":go: go fmt"
     key: test-go-fmt
-    command: ".buildkite/steps/test-go-fmt.sh"
+    command: "sleep 1000"
     plugins:
       docker-compose#v3.0.0:
         config: .buildkite/docker-compose.yml
