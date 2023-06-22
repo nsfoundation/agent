@@ -4,6 +4,10 @@ agents:
   queue: agent-runners-linux-amd64
 
 steps:
+  - name: "sleep"
+    key: sleep
+    command: "sleep 1000"
+  
   - name: ":go: go fmt"
     key: test-go-fmt
     command: "sleep 1000"
