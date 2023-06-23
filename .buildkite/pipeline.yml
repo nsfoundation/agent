@@ -128,7 +128,7 @@ steps:
           - BUILDKITE_BUILD_ID
           - BUILDKITE_JOB_ID
         volumes:
-          - "/usr/local/bin/buildkite-agent:/usr/bin/buildkite-agent"
+          - "/usr/bin/buildkite-agent:/usr/bin/buildkite-agent"
 
   - name: ":mag: Extract Agent Version Metadata"
     key: set-metadata
