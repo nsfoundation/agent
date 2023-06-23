@@ -6,7 +6,7 @@ build_version=${BUILDKITE_BUILD_NUMBER:-1}
 full_agent_version="buildkite-agent version ${agent_version}, build ${build_version}"
 
 # docker variants
-nsc docker login --use_credential_helper=false --output_registry_to=/tmp/registry
+nsc docker login --output_registry_to=/tmp/registry
 registry="$(cat /tmp/registry)/agent"
 docker_alpine_image_tag="$registry:alpine-build-${BUILDKITE_BUILD_NUMBER}"
 docker_alpine_k8s_image_tag="$registry:alpine-k8s-build-${BUILDKITE_BUILD_NUMBER}"
