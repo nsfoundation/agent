@@ -60,23 +60,11 @@ steps:
         files: "junit-*.xml"
         format: "junit"
 
-  - name: ":windows: Windows AMD64 Tests"
-    key: test-windows
-    command: "bash .buildkite\\steps\\tests.sh"
-    artifact_paths: junit-*.xml
-    agents:
-      queue: agent-runners-windows-amd64
-    plugins:
-      test-collector#v1.2.0:
-        files: "junit-*.xml"
-        format: "junit"
-
   - label: ":writing_hand: Annotate with Test Failures"
     depends_on:
       - test-linux-amd64
       - test-race-linux-arm64
       - test-linux-arm64
-      - test-windows
     plugins:
       - junit-annotate#v1.6.0:
           artifacts: junit-*.xml
@@ -102,7 +90,6 @@ steps:
             - freebsd
             - linux
             - openbsd
-            - windows
           arch:
             - "386"
             - amd64
@@ -233,7 +220,6 @@ steps:
   - name: ":pipeline: Upload Release Pipeline"
     key: upload-release-steps
     depends_on:
-      - test-windows
       - test-bk-cli
       - build-rpm-packages
       - build-debian-packages
