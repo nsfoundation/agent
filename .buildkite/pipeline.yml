@@ -217,13 +217,3 @@ steps:
         config: .buildkite/docker-compose.release.yml
         run: github-release
 
-  - name: ":pipeline: Upload Release Pipeline"
-    key: upload-release-steps
-    depends_on:
-      - test-bk-cli
-      - build-rpm-packages
-      - build-debian-packages
-      - build-github-release
-      - test-docker-amd64
-      - test-docker-arm64
-    command: ".buildkite/steps/upload-release-steps.sh"
