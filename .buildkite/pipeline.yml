@@ -41,7 +41,7 @@ steps:
       nsc-arch: arm64
     plugins:
       docker-compose#v3.0.0:
-        config: .buildkite/docker-compose.yml
+        config: .buildkite/docker-compose-arm.yml
         run: agent
       test-collector#v1.2.0:
         files: "junit-*.xml"
@@ -56,7 +56,7 @@ steps:
       nsc-arch: arm64
     plugins:
       docker-compose#v3.0.0:
-        config: .buildkite/docker-compose.yml
+        config: .buildkite/docker-compose-arm.yml
         run: agent
       test-collector#v1.2.0:
         files: "junit-*.xml"
