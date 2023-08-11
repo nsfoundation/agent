@@ -5,8 +5,6 @@ FROM ubuntu:22.04
 ARG TARGETOS
 ARG TARGETARCH
 
-ARG DOCKER_COMPOSE_VERSION=1.27.4
-
 RUN <<BASH
 #!/usr/bin/env bash
 
@@ -37,8 +35,6 @@ apt-get update
 apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin docker-buildx-plugin
 rm -rf /var/lib/apt/lists/*
 
-pip3 install docker-compose==$DOCKER_COMPOSE_VERSION
-
 ln -s /usr/bin/tini /usr/sbin/tini
 
 mkdir -p /buildkite/builds /buildkite/hooks /buildkite/plugins
@@ -47,8 +43,9 @@ chmod +x /usr/local/bin/ssh-env-config.sh
 BASH
 
 ENV BUILDKITE_AGENT_CONFIG=/buildkite/buildkite-agent.cfg \
-    PATH="/usr/local/bin:${PATH}"
+  PATH="/usr/local/bin:${PATH}"
 
+COPY ./docker-compose /usr/local/bin/docker-compose
 COPY ./buildkite-agent.cfg /buildkite/buildkite-agent.cfg
 COPY ./buildkite-agent-$TARGETOS-$TARGETARCH /usr/local/bin/buildkite-agent
 COPY ./entrypoint.sh /usr/local/bin/buildkite-agent-entrypoint

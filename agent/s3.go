@@ -72,6 +72,7 @@ func awsS3Session(region string, l logger.Logger) (*session.Session, error) {
 		[]credentials.Provider{
 			&buildkiteEnvProvider{},
 			&credentials.EnvProvider{},
+			sharedCredentialsProvider(),
 			webIdentityRoleProvider(sess),
 			// EC2 and ECS meta-data providers
 			defaults.RemoteCredProvider(*sess.Config, sess.Handlers),
@@ -100,6 +101,14 @@ func awsS3Session(region string, l logger.Logger) (*session.Session, error) {
 	}
 
 	return sess, nil
+}
+
+func sharedCredentialsProvider() credentials.Provider {
+	// If empty SDK will default to environment variable "AWS_PROFILE"
+	// or "default" if environment variable is also not set.
+	awsProfile := os.Getenv("BUILDKITE_S3_PROFILE")
+
+	return &credentials.SharedCredentialsProvider{Profile: awsProfile}
 }
 
 func webIdentityRoleProvider(sess *session.Session) *stscreds.WebIdentityRoleProvider {
@@ -172,7 +181,7 @@ func NewS3Client(l logger.Logger, bucket string) (*s3.S3, error) {
 				return nil, fmt.Errorf("%s Your HTTP proxy settings do not grant a NO_PROXY=169.254.169.254 exemption for the instance metadata service, instance profile credentials may not be retrievable via your HTTP proxy.", errorTitle)
 			}
 
-			return nil, fmt.Errorf("%s You can authenticate by setting Buildkite environment variables (BUILDKITE_S3_ACCESS_KEY_ID, BUILDKITE_S3_SECRET_ACCESS_KEY), AWS environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), Web Identity environment variables (AWS_ROLE_ARN, AWS_ROLE_SESSION_NAME, AWS_WEB_IDENTITY_TOKEN_FILE), or if running on AWS EC2 ensuring network access to the EC2 Instance Metadata Service to use an instance profile’s IAM Role credentials.", errorTitle)
+			return nil, fmt.Errorf("%s You can authenticate by setting Buildkite environment variables (BUILDKITE_S3_ACCESS_KEY_ID, BUILDKITE_S3_SECRET_ACCESS_KEY, BUILDKITE_S3_PROFILE), AWS environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_PROFILE), Web Identity environment variables (AWS_ROLE_ARN, AWS_ROLE_SESSION_NAME, AWS_WEB_IDENTITY_TOKEN_FILE), or if running on AWS EC2 ensuring network access to the EC2 Instance Metadata Service to use an instance profile’s IAM Role credentials.", errorTitle)
 		}
 		return nil, fmt.Errorf("Could not s3:ListObjects in your AWS S3 bucket %q in region %q: (%s)", bucket, *sess.Config.Region, err.Error())
 	}

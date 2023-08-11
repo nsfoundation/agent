@@ -1,26 +1,103 @@
 package integration
 
 import (
-	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"os"
+	"strconv"
 	"testing"
 
 	"github.com/buildkite/agent/v3/agent"
 	"github.com/buildkite/agent/v3/api"
-	"github.com/buildkite/agent/v3/logger"
-	"github.com/buildkite/agent/v3/metrics"
 	"github.com/buildkite/bintest/v3"
 )
 
-func TestJobRunner_WhenJobHasToken_ItOverridesAccessToken(t *testing.T) {
-	agentAccessToken := "llamasrock"
-	jobToken := "actually-llamas-are-only-okay"
+func TestPreBootstrapHookRefusesJob(t *testing.T) {
+	t.Parallel()
 
-	ag := &api.AgentRegisterResponse{
-		AccessToken: agentAccessToken,
+	hooksDir, err := os.MkdirTemp("", "bootstrap-hooks")
+	if err != nil {
+		t.Fatalf("making bootstrap-hooks directory: %v", err)
 	}
+
+	defer os.RemoveAll(hooksDir)
+
+	mockPB := mockPreBootstrap(t, hooksDir)
+	mockPB.Expect().Once().AndCallFunc(func(c *bintest.Call) {
+		c.Exit(1) // Fail the pre-bootstrap hook
+	})
+	defer mockPB.CheckAndClose(t)
+
+	jobID := "my-job-id"
+	j := &api.Job{
+		ID:                 jobID,
+		ChunksMaxSizeBytes: 1024,
+		Env: map[string]string{
+			"BUILDKITE_COMMAND": "echo hello world",
+		},
+	}
+
+	// create a mock agent API
+	e := createTestAgentEndpoint()
+	server := e.server("my-job-id")
+	defer server.Close()
+
+	mb := mockBootstrap(t)
+	mb.Expect().NotCalled() // The bootstrap won't be called, as the pre-bootstrap hook failed
+	defer mb.CheckAndClose(t)
+
+	runJob(t, j, server, agent.AgentConfiguration{HooksPath: hooksDir}, mb)
+
+	job := e.finishesFor(t, jobID)[0]
+
+	if got, want := job.ExitStatus, "-1"; got != want {
+		t.Errorf("job.ExitStatus = %q, want %q", got, want)
+	}
+
+	if got, want := job.SignalReason, "agent_refused"; got != want {
+		t.Errorf("job.SignalReason = %q, want %q", got, want)
+	}
+}
+
+func TestJobRunner_WhenBootstrapExits_ItSendsTheExitStatusToTheAPI(t *testing.T) {
+	t.Parallel()
+
+	exits := []int{0, 1, 2, 3}
+	for _, exit := range exits {
+		exit := exit
+		t.Run(fmt.Sprintf("exit-%d", exit), func(t *testing.T) {
+			t.Parallel()
+
+			j := &api.Job{
+				ID:                 "my-job-id",
+				ChunksMaxSizeBytes: 1024,
+				Env: map[string]string{
+					"BUILDKITE_COMMAND": "echo hello world",
+				},
+			}
+
+			mb := mockBootstrap(t)
+			defer mb.CheckAndClose(t)
+
+			mb.Expect().Once().AndExitWith(exit)
+
+			e := createTestAgentEndpoint()
+			server := e.server("my-job-id")
+			defer server.Close()
+
+			runJob(t, j, server, agent.AgentConfiguration{}, mb)
+			finish := e.finishesFor(t, "my-job-id")[0]
+
+			if got, want := finish.ExitStatus, strconv.Itoa(exit); got != want {
+				t.Errorf("finish.ExitStatus = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestJobRunner_WhenJobHasToken_ItOverridesAccessToken(t *testing.T) {
+	t.Parallel()
+
+	jobToken := "actually-llamas-are-only-okay"
 
 	j := &api.Job{
 		ID:                 "my-job-id",
@@ -31,20 +108,28 @@ func TestJobRunner_WhenJobHasToken_ItOverridesAccessToken(t *testing.T) {
 		},
 	}
 
-	cfg := agent.AgentConfiguration{}
+	mb := mockBootstrap(t)
+	defer mb.CheckAndClose(t)
 
-	runJob(t, ag, j, cfg, func(c *bintest.Call) {
+	mb.Expect().Once().AndExitWith(0).AndCallFunc(func(c *bintest.Call) {
 		if got, want := c.GetEnv("BUILDKITE_AGENT_ACCESS_TOKEN"), jobToken; got != want {
 			t.Errorf("c.GetEnv(BUILDKITE_AGENT_ACCESS_TOKEN) = %q, want %q", got, want)
 		}
 		c.Exit(0)
 	})
+
+	// create a mock agent API
+	e := createTestAgentEndpoint()
+	server := e.server("my-job-id")
+	defer server.Close()
+
+	runJob(t, j, server, agent.AgentConfiguration{}, mb)
 }
 
+// TODO 2023-07-17: What is this testing? How is it testing it?
+// Maybe that the job runner pulls the access token from the API client? but that's all handled in the `runJob` helper...
 func TestJobRunnerPassesAccessTokenToBootstrap(t *testing.T) {
-	ag := &api.AgentRegisterResponse{
-		AccessToken: "llamasrock",
-	}
+	t.Parallel()
 
 	j := &api.Job{
 		ID:                 "my-job-id",
@@ -54,20 +139,26 @@ func TestJobRunnerPassesAccessTokenToBootstrap(t *testing.T) {
 		},
 	}
 
-	cfg := agent.AgentConfiguration{}
+	mb := mockBootstrap(t)
+	defer mb.CheckAndClose(t)
 
-	runJob(t, ag, j, cfg, func(c *bintest.Call) {
+	mb.Expect().Once().AndExitWith(0).AndCallFunc(func(c *bintest.Call) {
 		if got, want := c.GetEnv("BUILDKITE_AGENT_ACCESS_TOKEN"), "llamasrock"; got != want {
 			t.Errorf("c.GetEnv(BUILDKITE_AGENT_ACCESS_TOKEN) = %q, want %q", got, want)
 		}
 		c.Exit(0)
 	})
+
+	// create a mock agent API
+	e := createTestAgentEndpoint()
+	server := e.server("my-job-id")
+	defer server.Close()
+
+	runJob(t, j, server, agent.AgentConfiguration{}, mb)
 }
 
 func TestJobRunnerIgnoresPipelineChangesToProtectedVars(t *testing.T) {
-	ag := &api.AgentRegisterResponse{
-		AccessToken: "llamasrock",
-	}
+	t.Parallel()
 
 	j := &api.Job{
 		ID:                 "my-job-id",
@@ -78,74 +169,20 @@ func TestJobRunnerIgnoresPipelineChangesToProtectedVars(t *testing.T) {
 		},
 	}
 
-	cfg := agent.AgentConfiguration{
-		CommandEval: true,
-	}
+	mb := mockBootstrap(t)
+	defer mb.CheckAndClose(t)
 
-	runJob(t, ag, j, cfg, func(c *bintest.Call) {
+	mb.Expect().Once().AndExitWith(0).AndCallFunc(func(c *bintest.Call) {
 		if got, want := c.GetEnv("BUILDKITE_COMMAND_EVAL"), "true"; got != want {
 			t.Errorf("c.GetEnv(BUILDKITE_COMMAND_EVAL) = %q, want %q", got, want)
 		}
 		c.Exit(0)
 	})
 
-}
-
-func runJob(t *testing.T, ag *api.AgentRegisterResponse, j *api.Job, cfg agent.AgentConfiguration, bootstrap func(c *bintest.Call)) {
 	// create a mock agent API
-	server := createTestAgentEndpoint(t, "my-job-id")
+	e := createTestAgentEndpoint()
+	server := e.server("my-job-id")
 	defer server.Close()
 
-	// set up a mock bootstrap that the runner will call
-	bs, err := bintest.NewMock("buildkite-agent-bootstrap")
-	if err != nil {
-		t.Fatalf("bintest.NewMock() error = %v", err)
-	}
-	defer bs.CheckAndClose(t)
-
-	// execute the callback we have inside the bootstrap mock
-	bs.Expect().Once().AndExitWith(0).AndCallFunc(bootstrap)
-
-	l := logger.Discard
-
-	// minimal metrics, this could be cleaner
-	m := metrics.NewCollector(l, metrics.CollectorConfig{})
-	scope := m.Scope(metrics.Tags{})
-
-	// set the bootstrap into the config
-	cfg.BootstrapScript = bs.Path
-
-	client := api.NewClient(l, api.Config{
-		Endpoint: server.URL,
-		Token:    ag.AccessToken,
-	})
-
-	jr, err := agent.NewJobRunner(l, scope, ag, j, client, agent.JobRunnerConfig{
-		AgentConfiguration: cfg,
-	})
-	if err != nil {
-		t.Fatalf("agent.NewJobRunner() error = %v", err)
-	}
-
-	if err := jr.Run(context.Background()); err != nil {
-		t.Errorf("jr.Run() = %v", err)
-	}
-}
-
-func createTestAgentEndpoint(t *testing.T, jobID string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		switch req.URL.Path {
-		case "/jobs/" + jobID:
-			rw.WriteHeader(http.StatusOK)
-			fmt.Fprintf(rw, `{"state":"running"}`)
-		case "/jobs/" + jobID + "/start":
-			rw.WriteHeader(http.StatusOK)
-		case "/jobs/" + jobID + "/chunks":
-			rw.WriteHeader(http.StatusCreated)
-		case "/jobs/" + jobID + "/finish":
-			rw.WriteHeader(http.StatusOK)
-		default:
-			http.Error(rw, fmt.Sprintf("not found; method = %q, path = %q", req.Method, req.URL.Path), http.StatusNotFound)
-		}
-	}))
+	runJob(t, j, server, agent.AgentConfiguration{CommandEval: true}, mb)
 }

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/buildkite/agent/v3/agent"
 	"github.com/buildkite/agent/v3/api"
-	"github.com/buildkite/agent/v3/clicommand"
 	"github.com/buildkite/agent/v3/internal/pipeline"
 	"github.com/buildkite/agent/v3/logger"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +21,7 @@ func TestAsyncPipelineUpload(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	l := clicommand.CreateLogger(&clicommand.PipelineUploadConfig{LogLevel: "notice"})
+	l := logger.NewBuffer()
 
 	for _, test := range []struct {
 		replace        bool
@@ -78,8 +78,7 @@ steps:
     agents:
       queue: xxx`
 
-			parser := pipeline.Parser{Pipeline: []byte(pipelineStr), Env: nil}
-			pipeline, err := parser.Parse()
+			pipeline, err := pipeline.Parse(strings.NewReader(pipelineStr))
 			assert.NoError(t, err)
 
 			server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -135,7 +134,7 @@ func TestFallbackPipelineUpload(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	l := clicommand.CreateLogger(&clicommand.PipelineUploadConfig{LogLevel: "notice"})
+	l := logger.NewBuffer()
 
 	genSleeps := func(n int, s time.Duration) []time.Duration {
 		sleeps := make([]time.Duration, 0, n)
@@ -205,8 +204,7 @@ steps:
     agents:
       queue: xxx`
 
-			parser := pipeline.Parser{Pipeline: []byte(pipelineStr), Env: nil}
-			pipeline, err := parser.Parse()
+			pipeline, err := pipeline.Parse(strings.NewReader(pipelineStr))
 			assert.NoError(t, err)
 
 			countUploadCalls := 0

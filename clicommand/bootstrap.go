@@ -2,16 +2,14 @@ package clicommand
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 
-	"github.com/buildkite/agent/v3/bootstrap"
-	"github.com/buildkite/agent/v3/cliconfig"
-	"github.com/buildkite/agent/v3/experiments"
+	"github.com/buildkite/agent/v3/internal/job"
 	"github.com/buildkite/agent/v3/process"
 	"github.com/urfave/cli"
 )
@@ -81,6 +79,7 @@ type BootstrapConfig struct {
 	PluginValidation             bool     `cli:"plugin-validation"`
 	PluginsAlwaysCloneFresh      bool     `cli:"plugins-always-clone-fresh"`
 	LocalHooksEnabled            bool     `cli:"local-hooks-enabled"`
+	StrictSingleHooks            bool     `cli:"strict-single-hooks"`
 	PTY                          bool     `cli:"pty"`
 	LogLevel                     string   `cli:"log-level"`
 	Debug                        bool     `cli:"debug"`
@@ -89,6 +88,7 @@ type BootstrapConfig struct {
 	Phases                       []string `cli:"phases" normalize:"list"`
 	Profile                      string   `cli:"profile"`
 	CancelSignal                 string   `cli:"cancel-signal"`
+	SignalGracePeriodSeconds     int      `cli:"signal-grace-period-seconds"`
 	RedactedVars                 []string `cli:"redacted-vars" normalize:"list"`
 	TracingBackend               string   `cli:"tracing-backend"`
 	TracingServiceName           string   `cli:"tracing-service-name"`
@@ -334,12 +334,8 @@ var BootstrapCommand = cli.Command{
 			Usage:  "The specific phases to execute. The order they're defined is irrelevant.",
 			EnvVar: "BUILDKITE_BOOTSTRAP_PHASES",
 		},
-		cli.StringFlag{
-			Name:   "cancel-signal",
-			Usage:  "The signal to use for cancellation",
-			EnvVar: "BUILDKITE_CANCEL_SIGNAL",
-			Value:  "SIGTERM",
-		},
+		cancelSignalFlag,
+		signalGracePeriodSecondsFlag,
 		cli.StringSliceFlag{
 			Name:   "redacted-vars",
 			Usage:  "Pattern of environment variable names containing sensitive values",
@@ -361,32 +357,11 @@ var BootstrapCommand = cli.Command{
 		LogLevelFlag,
 		ExperimentsFlag,
 		ProfileFlag,
+		StrictSingleHooksFlag,
 	},
 	Action: func(c *cli.Context) {
-		// The configuration will be loaded into this struct
-		cfg := BootstrapConfig{}
-
-		loader := cliconfig.Loader{CLI: c, Config: &cfg}
-		warnings, err := loader.Load()
-		if err != nil {
-			fmt.Printf("%s", err)
-			os.Exit(1)
-		}
-
-		l := CreateLogger(&cfg)
-
-		// Now that we have a logger, log out the warnings that loading config generated
-		for _, warning := range warnings {
-			l.Warn("%s", warning)
-		}
-
-		// Enable experiments
-		for _, name := range cfg.Experiments {
-			experiments.EnableWithWarnings(l, name)
-		}
-
-		// Handle profiling flag
-		done := HandleProfileFlag(l, cfg)
+		ctx := context.Background()
+		cfg, l, _, done := setupLoggerAndConfig[BootstrapConfig](c)
 		defer done()
 
 		// Turn of PTY support if we're on Windows
@@ -410,8 +385,10 @@ var BootstrapCommand = cli.Command{
 			l.Fatal("Failed to parse cancel-signal: %v", err)
 		}
 
+		signalGracePeriod := time.Duration(cfg.SignalGracePeriodSeconds) * time.Second
+
 		// Configure the bootstraper
-		bootstrap := bootstrap.New(bootstrap.Config{
+		bootstrap := job.New(job.ExecutorConfig{
 			AgentName:                    cfg.AgentName,
 			ArtifactUploadDestination:    cfg.ArtifactUploadDestination,
 			AutomaticArtifactUploadPaths: cfg.AutomaticArtifactUploadPaths,
@@ -420,6 +397,7 @@ var BootstrapCommand = cli.Command{
 			BuildPath:                    cfg.BuildPath,
 			SocketsPath:                  cfg.SocketsPath,
 			CancelSignal:                 cancelSig,
+			SignalGracePeriod:            signalGracePeriod,
 			CleanCheckout:                cfg.CleanCheckout,
 			Command:                      cfg.Command,
 			CommandEval:                  cfg.CommandEval,
@@ -455,12 +433,13 @@ var BootstrapCommand = cli.Command{
 			RunInPty:                     runInPty,
 			SSHKeyscan:                   cfg.SSHKeyscan,
 			Shell:                        cfg.Shell,
+			StrictSingleHooks:            cfg.StrictSingleHooks,
 			Tag:                          cfg.Tag,
 			TracingBackend:               cfg.TracingBackend,
 			TracingServiceName:           cfg.TracingServiceName,
 		})
 
-		ctx, cancel := context.WithCancel(context.Background())
+		cctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		signals := make(chan os.Signal, 1)
@@ -495,7 +474,7 @@ var BootstrapCommand = cli.Command{
 		}()
 
 		// Run the bootstrap and get the exit code
-		exitCode := bootstrap.Run(ctx)
+		exitCode := bootstrap.Run(cctx)
 
 		signalMu.Lock()
 		defer signalMu.Unlock()

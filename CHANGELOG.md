@@ -5,6 +5,145 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## [v3.50.4](https://github.com/buildkite/agent/tree/v3.50.4) (2023-07-31)
+[Full Changelog](https://github.com/buildkite/agent/compare/v3.50.3...v3.50.4)
+
+### Fixed
+- Even More Pipeline Parsing Fixes [#2253](https://github.com/buildkite/agent/pull/2253) (@moskyb)
+- Fix missing `return` statements when unmarshalling fails [#2245](https://github.com/buildkite/agent/pull/2245) (@moskyb), [#2257](https://github.com/buildkite/agent/pull/2257) (@DrJosh9000)
+- Add future-proofing `UnknownStep` type [#2254](https://github.com/buildkite/agent/pull/2254) (@DrJosh9000)
+- Nil handling fixes, particularly parsing `env: null` [#2260](https://github.com/buildkite/agent/pull/2260) (@DrJosh9000)
+
+## Changed
+- Remove docker-compose v1 from ubuntu 22.04 and replace with compatibility script [#2248](https://github.com/buildkite/agent/pull/2248) (@triarius)
+- Authentication failure errors when using S3 now mention `BUILDKITE_S3_PROFILE` and `AWS_PROFILE` [#2247](https://github.com/buildkite/agent/pull/2247) (@DrJosh9000)
+
+## Internal
+- Remove a double check for the existence of a local hook and log when it is missing in debug [#2249](https://github.com/buildkite/agent/pull/2249) (@triarius)
+- Refactor some code in process.go [#2251](https://github.com/buildkite/agent/pull/2251) (@triarius)
+- Store `GOCACHE` outside container [#2256](https://github.com/buildkite/agent/pull/2256) (@DrJosh9000)
+- Get mime types from github, rather than Apache's SVN Server [#2255](https://github.com/buildkite/agent/pull/2255) (@moskyb)
+- Check that go.mod is tidy in CI [#2246](https://github.com/buildkite/agent/pull/2246) (@moskyb) and fix flakiness of this check [#2261](https://github.com/buildkite/agent/pull/2261) (@triarius)
+
+## [v3.50.3](https://github.com/buildkite/agent/tree/v3.50.3) (2023-07-24)
+[Full Changelog](https://github.com/buildkite/agent/compare/v3.50.2...v3.50.3)
+
+### Changed
+- Two-phase pipeline parsing [#2238](https://github.com/buildkite/agent/pull/2238) (@DrJosh9000)
+- Remove installing qemu-binfmt from agent pipeline [#2236](https://github.com/buildkite/agent/pull/2236) (@triarius)
+
+## [v3.50.2](https://github.com/buildkite/agent/tree/v3.50.2) (2023-07-21)
+[Full Changelog](https://github.com/buildkite/agent/compare/v3.50.1...v3.50.2)
+
+This release contains a known issue:
+|Severity|Description|Fixed in|
+|---|---|---|
+| Medium | When uploading pipelines, if any object in the pipeline YAML contained multiple merge keys, the pipeline would fail to parse. See below for a workaround | **✅ Fixed in [v3.50.3](#v3.50.3)** |
+
+### Fixed
+- Fix an issue introduced in [#2207](https://github.com/buildkite/agent/pull/2207) where jobs wouldn't check if they'd been cancelled [#2231](https://github.com/buildkite/agent/pull/2231) (@triarius)
+- Fix avoid-recursive-trap experiment not recognised [#2235](https://github.com/buildkite/agent/pull/2235) (@triarius)
+- Further refactor to `agent.JobRunner` [#2222](https://github.com/buildkite/agent/pull/2222) [#2230](https://github.com/buildkite/agent/pull/2230) (@moskyb)
+
+
+## [v3.50.1](https://github.com/buildkite/agent/tree/v3.50.1) (2023-07-20)
+[Full Changelog](https://github.com/buildkite/agent/compare/v3.49.0...v3.50.1)
+
+This release contains multiple issues:
+
+|Severity|Description|Fixed in|
+|---|---|---|
+| ⚠️ Very High | Jobs running on this version of the agent are not cancellable from the UI/API | **✅ Fixed in [v3.50.2](#v3.50.2)** |
+| Medium | When uploading pipelines, if any object in the pipeline YAML contained multiple merge keys, the pipeline would fail to parse. See below for a workaround | **✅ Fixed in [v3.50.3](#v3.50.3)** |
+
+### Fixed
+- Empty or zero-length `steps` is no longer a parser error, and is normalised to \[\] instead [#2225](https://github.com/buildkite/agent/pull/2225), [#2229](https://github.com/buildkite/agent/pull/2229) (@DrJosh9000)
+- Group steps now correctly include the `group` key [#2226](https://github.com/buildkite/agent/pull/2226) (@DrJosh9000)
+- Increases to test coverage for the new parser [#2227](https://github.com/buildkite/agent/pull/2227) (@DrJosh9000)
+
+## [v3.50.0](https://github.com/buildkite/agent/tree/v3.50.0) (2023-07-18)
+[Full Changelog](https://github.com/buildkite/agent/compare/v3.49.0...v3.50.0)
+
+This release contains multiple issues:
+
+|Severity|Description|Fixed in|
+|---|---|---|
+| Medium | When uploading pipelines, some group steps are not correctly parsed, and were ignored. | **✅ Fixed in [v3.50.1](#v3.50.1)** |
+| Low | Uploading pipelines with empty or zero-length `steps` failed, where they should've been a no-op. | **✅ Fixed in [v3.50.1](#v3.50.1)** |
+| ⚠️ Very High | Jobs running on this version of the agent are not cancellable from the UI/API | **✅ Fixed in [v3.50.2](#v3.50.2)** |
+| Medium | When uploading pipelines, if any object in the pipeline YAML contained multiple merge keys, the pipeline would fail to parse. See below for a workaround | **✅ Fixed in [v3.50.3](#v3.50.3)** |
+
+
+<details>
+<summary>Workaround for yaml merge key issue</summary>
+For example, this pipeline would fail to parse:
+
+```yaml
+default_plugins: &default_plugins
+  plugins:
+    - docker#4.0.0:
+        image: alpine:3.14
+
+default_retry: &default_retry
+  retry:
+    automatic:
+      - exit_status: 42
+
+steps:
+  - <<: *default_plugins
+    <<: *default_retry
+    command: "echo 'hello, world!'"
+```
+
+As a workaround for this, you can use yaml array merge syntax instead:
+
+```yaml
+default_plugins: &default_plugins
+  plugins:
+    - docker#4.0.0:
+        image: alpine:3.14
+
+default_retry: &default_retry
+  retry:
+    automatic:
+      - exit_status: 42
+
+steps:
+  - <<: [*default_plugins, *default_retry]
+    command: "echo 'hello, world!'"
+```
+</details>
+
+### Added
+- We're working on making pipeline signing a feature of the agent! But it's definitely not ready for primetime yet... [#2216](https://github.com/buildkite/agent/pull/2216), [#2200](https://github.com/buildkite/agent/pull/2200), [#2191](https://github.com/buildkite/agent/pull/2191), [#2186](https://github.com/buildkite/agent/pull/2186), [#2190](https://github.com/buildkite/agent/pull/2190), [#2181](https://github.com/buildkite/agent/pull/2181), [#2184](https://github.com/buildkite/agent/pull/2184), [#2173](https://github.com/buildkite/agent/pull/2173), [#2180](https://github.com/buildkite/agent/pull/2180) (@moskyb, @DrJosh9000)
+- Add option to configure location of Job Log tmp file [#2174](https://github.com/buildkite/agent/pull/2174) (@yhartanto)
+- Add `avoid-recursive-trap` experiment to avoid a recursive trap [#2209](https://github.com/buildkite/agent/pull/2209) (@triarius)
+- Load the AWS Shared Credentials for s3 operations [#1730](https://github.com/buildkite/agent/pull/1730) (@lox)
+
+### Fixed
+- Add workaround for `fatal: bad object` errors when fetching from a git mirror [#2218](https://github.com/buildkite/agent/pull/2218) (@DrJosh9000)
+- Fix missing fetch when updating git mirrors of submodules (https://github.com/buildkite/agent/pull/2203) (@DrJosh9000)
+- Use a unique name for each agent started using the systemd template unit file [#2205](https://github.com/buildkite/agent/pull/2205) (@DavidGregory084)
+- Polyglot hooks wasn't documented in EXPERIMENTS.md, so we fixed that [#2169](https://github.com/buildkite/agent/pull/2169) (@moskyb)
+- De-experimentify wording on the status page [#2172](https://github.com/buildkite/agent/pull/2172) (@DrJosh9000)
+- The secrets redactor now properly redacts multi-line secrets and overlapping secrets [#2154](https://github.com/buildkite/agent/pull/2154) (@DrJosh9000)
+
+### Changed
+- Print agent version and build in debug logs [#2211](https://github.com/buildkite/agent/pull/2211) (@triarius)
+- Include the version each experiment was promoted [#2199](https://github.com/buildkite/agent/pull/2199) (@DrJosh9000)
+
+### Various code cleanups and meta-fixes
+- Fix docker builds for Ubuntu 22.04 [#2217](https://github.com/buildkite/agent/pull/2217) (@moskyb)
+- JobRunner cleanup [#2207](https://github.com/buildkite/agent/pull/2207) (@moskyb)
+- Simplify command phase [#2206](https://github.com/buildkite/agent/pull/2206) (@triarius)
+- Rename `Bootstrap` struct (and friends) to `Executor` [#2188](https://github.com/buildkite/agent/pull/2188) (@moskyb)
+- Upgrade docker compose plugin to v4.14, use docker compose v2 [#2189](https://github.com/buildkite/agent/pull/2189) (@moskyb)
+- Rename package bootstrap -> job [#2187](https://github.com/buildkite/agent/pull/2187) (@moskyb)
+- Clarify code around creating a process group [#2185](https://github.com/buildkite/agent/pull/2185) (@triarius)
+- Fix docker builds for Ubuntu 22.04 [#2217](https://github.com/buildkite/agent/pull/2217) (@moskyb)
+
+And the usual amount of @dependabot[bot] updates!
+
 ## [v3.49.0](https://github.com/buildkite/agent/tree/v3.49.0) (2023-06-21)
 [Full Changelog](https://github.com/buildkite/agent/compare/v3.48.0...v3.49.0)
 
@@ -35,7 +174,7 @@ The de-experimentification release!
   running the agent with `--health-check-addr`, go to `/status` to see a
   human-friendly status page.
 
-And whatever happened to `git-mirrors`? It graduated from experiment-hood in 
+And whatever happened to `git-mirrors`? It graduated from experiment-hood in
 v3.47.0!
 
 ### Changed
@@ -57,11 +196,11 @@ Two new and very noteworthy experiments!
 
 1. Have you ever wanted to write hooks in a compiled language? Or in Python or
    Ruby? Well now you can! With `--experiment=polyglot-hooks` the agent can run
-   all sorts of hooks and plugins directly. Combined with 
+   all sorts of hooks and plugins directly. Combined with
    `--experiment=job-api`, your hooks-of-a-different-language can alter
     environment variables through the local Job API!
 2. Concurrency groups are great, but have you ever wanted to manage multiple
-   agents running on the same host concurrently accessing a shared resource? 
+   agents running on the same host concurrently accessing a shared resource?
    Well now you can! With `--experiment=agent-api`, the agent now has an inbuilt
    locking service, accessible through new `lock` subcommands and also via a
    Unix socket (like the `job-api`).

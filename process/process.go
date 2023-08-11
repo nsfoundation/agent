@@ -43,6 +43,10 @@ var signalMap = map[string]Signal{
 	"SIGTERM": SIGTERM,
 }
 
+var ErrNotWaitStatus = errors.New(
+	"unimplemented for systems where exec.ExitError.Sys() is not syscall.WaitStatus",
+)
+
 type WaitStatus interface {
 	ExitStatus() int
 	Signaled() bool
@@ -68,16 +72,17 @@ func ParseSignal(sig string) (Signal, error) {
 
 // Configuration for a Process
 type Config struct {
-	PTY             bool
-	Timestamp       bool
-	Path            string
-	Args            []string
-	Env             []string
-	Stdin           io.Reader
-	Stdout          io.Writer
-	Stderr          io.Writer
-	Dir             string
-	InterruptSignal Signal
+	PTY               bool
+	Timestamp         bool
+	Path              string
+	Args              []string
+	Env               []string
+	Stdin             io.Reader
+	Stdout            io.Writer
+	Stderr            io.Writer
+	Dir               string
+	InterruptSignal   Signal
+	SignalGracePeriod time.Duration
 }
 
 // Process is an operating system level process
@@ -127,10 +132,7 @@ func (p *Process) Run(ctx context.Context) error {
 	p.command = exec.Command(p.conf.Path, p.conf.Args...)
 
 	// Setup the process to create a process group if supported
-	// See https://github.com/kr/pty/issues/35 for context
-	if !p.conf.PTY {
-		p.setupProcessGroup()
-	}
+	p.setupProcessGroup()
 
 	// Configure working dir and fail if it doesn't exist, otherwise
 	// we get confusing errors about fork/exec failing because the file
@@ -208,10 +210,10 @@ func (p *Process) Run(ctx context.Context) error {
 		p.command.Stdout = p.conf.Stdout
 		p.command.Stderr = p.conf.Stderr
 
-		err := p.command.Start()
-		if err != nil {
+		if err := p.command.Start(); err != nil {
 			return err
 		}
+
 		if err := p.postStart(); err != nil {
 			p.logger.Error("[Process] postStart failed: %v", err)
 		}
@@ -222,21 +224,32 @@ func (p *Process) Run(ctx context.Context) error {
 	}
 
 	// When the context finishes, terminate the process
-	if ctx != nil {
-		go func() {
-			select {
-			case <-ctx.Done():
-				p.logger.Debug("[Process] Context done, terminating")
-				if err := p.Terminate(); err != nil {
-					p.logger.Debug("[Process] Failed terminate: %v", err)
-				}
-				return
+	go func() {
+		if ctx == nil {
+			return
+		}
 
-			case <-p.Done():
-				return
+		select {
+		case <-p.Done(): // process exited of it's own accord
+			return
+		case <-ctx.Done():
+			p.logger.Debug("[Process] Context done, terminating. pid=%d", p.pid)
+			if err := p.Interrupt(); err != nil {
+				p.logger.Warn("[Process] Failed termination: %v", err)
 			}
-		}()
-	}
+
+			select {
+			case <-p.Done(): // process exited after being interrupted
+				return
+			case <-time.After(p.conf.SignalGracePeriod):
+				p.logger.Warn("[Process] Has not terminated in time, killing. pid=%d", p.pid)
+				if err := p.Terminate(); err != nil {
+					p.logger.Error("[Process] error sending SIGKILL: %s", err)
+					return
+				}
+			}
+		}
+	}()
 
 	p.logger.Info("[Process] Process is running with PID: %d", p.pid)
 
@@ -250,14 +263,16 @@ func (p *Process) Run(ctx context.Context) error {
 
 	// Convert the wait result into a native WaitStatus
 	if p.waitResult != nil {
-		if err, ok := p.waitResult.(*exec.ExitError); ok {
-			if s, ok := err.Sys().(syscall.WaitStatus); ok {
-				p.status = s
-			} else {
-				return fmt.Errorf("Unimplemented for system where exec.ExitError.Sys() is not syscall.WaitStatus.")
-			}
-		} else {
-			return fmt.Errorf("Unexpected error type %T", p.waitResult)
+		exitErr := new(exec.ExitError)
+		if !errors.As(p.waitResult, &exitErr) {
+			return fmt.Errorf("unexpected error type %T: %w", p.waitResult, p.waitResult)
+		}
+
+		switch ws := exitErr.Sys().(type) {
+		case syscall.WaitStatus: // posix
+			p.status = ws
+		default: // not-posix
+			return ErrNotWaitStatus
 		}
 	}
 
