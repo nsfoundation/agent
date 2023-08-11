@@ -1,7 +1,7 @@
 env:
   DRY_RUN: false # set to true to disable publishing releases
 agents:
-  queue: agent-runners-linux-amd64
+  queue: default
 
 steps:  
   - name: ":go: go fmt"
@@ -37,7 +37,8 @@ steps:
     command: ".buildkite/steps/tests.sh"
     artifact_paths: junit-*.xml
     agents:
-      queue: agent-runners-linux-arm64
+      queue: default
+      nsc-arch: arm64
     plugins:
       docker-compose#v3.0.0:
         config: .buildkite/docker-compose.yml
@@ -51,7 +52,8 @@ steps:
     command: ".buildkite/steps/tests.sh -race"
     artifact_paths: junit-*.xml
     agents:
-      queue: agent-runners-linux-arm64
+      queue: default
+      nsc-arch: arm64
     plugins:
       docker-compose#v3.0.0:
         config: .buildkite/docker-compose.yml
@@ -139,7 +141,7 @@ steps:
       - name: ":docker: {{matrix}} image build"
         key: build-docker
         agents:
-          queue: elastic-builders
+          queue: default
         depends_on:
           - build-binary
           - set-metadata
@@ -158,7 +160,7 @@ steps:
       - name: ":docker: {{matrix.variant}} amd64 image test"
         key: test-docker-amd64
         agents:
-          queue: elastic-builders
+          queue: default
         depends_on:
           - build-docker
         command: .buildkite/steps/test-docker-image.sh {{matrix.variant}}
@@ -175,7 +177,8 @@ steps:
       - name: ":docker: {{matrix.variant}} arm64 image test"
         key: test-docker-arm64
         agents:
-          queue: elastic-builders-arm64
+          queue: default
+          nsc-arch: arm64
         depends_on:
           - build-docker
         command: .buildkite/steps/test-docker-image.sh {{matrix.variant}}
