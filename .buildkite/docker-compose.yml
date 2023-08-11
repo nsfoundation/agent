@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile-compile
+      platforms: 
+        - "linux/amd64"
+        - "linux/arm64" 
     volumes:
       - ../:/work:cached
       - ~/gocache:/gocache
