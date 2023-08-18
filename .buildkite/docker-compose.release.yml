@@ -8,7 +8,7 @@ services:
       dockerfile: Dockerfile-github-release
     volumes:
       - ../:/app
-      - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent
+      - /usr/bin/:/host/usr/bin/
     working_dir: /app
     environment:
       - BUILDKITE_AGENT_ACCESS_TOKEN
