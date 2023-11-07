@@ -54,23 +54,6 @@ steps:
       - artifacts#v1.9.0:
           upload: "cover.{html,out}"
 
-  - name: ":satellite: Detect Data Races"
-    key: test-race-linux-arm64
-    command: ".buildkite/steps/tests.sh -race"
-    artifact_paths: junit-*.xml
-    agents:
-      nsc-arch: arm64
-    plugins:
-      - docker-compose#v4.14.0:
-          config: .buildkite/docker-compose.yml
-          cli-version: 2
-          run: agent
-      - test-collector#v1.2.0:
-          files: "junit-*.xml"
-          format: "junit"
-      - artifacts#v1.9.0:
-          upload: "cover.{html,out}"
-
   - label: ":writing_hand: Annotate with Test Failures"
     depends_on:
       - test-linux-amd64
@@ -217,16 +200,3 @@ steps:
       - set-metadata
     command: ".buildkite/steps/build-rpm-packages.sh"
     artifact_paths: "rpm/**/*"
-
-  - name: ":github: Build Github Release"
-    key: build-github-release
-    depends_on:
-      - build-binary
-      - set-metadata
-    command: ".buildkite/steps/build-github-release.sh"
-    artifact_paths: "releases/**/*"
-    plugins:
-      docker-compose#v4.14.0:
-        config: .buildkite/docker-compose.release.yml
-        run: github-release
-
