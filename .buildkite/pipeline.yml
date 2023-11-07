@@ -57,7 +57,6 @@ steps:
   - label: ":writing_hand: Annotate with Test Failures"
     depends_on:
       - test-linux-amd64
-      - test-race-linux-arm64
       - test-linux-arm64
     plugins:
       - junit-annotate#v1.6.0:
